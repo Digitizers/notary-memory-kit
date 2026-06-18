@@ -1,0 +1,19 @@
+{
+  "authorities": [
+    {
+      "agent_id": "planner",
+      "allowed_surfaces": ["project_scope"],
+      "can_overwrite": true
+    },
+    {
+      "agent_id": "builder",
+      "allowed_surfaces": ["implementation_notes", "migration_status"],
+      "can_overwrite": false
+    },
+    {
+      "agent_id": "reviewer",
+      "allowed_surfaces": ["migration_status", "project_scope"],
+      "can_overwrite": true
+    }
+  ]
+}

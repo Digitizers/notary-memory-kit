@@ -1,0 +1,64 @@
+{
+  "facts": [
+    {
+      "fact_id": "atlas-f002",
+      "content": "Builder tested the import script locally against the synthetic docs-v2 fixture.",
+      "agent_id": "builder",
+      "session_id": "atlas-s001",
+      "timestamp": "2026-01-10T10:15:00Z",
+      "surface": "implementation_notes",
+      "lifecycle": "session",
+      "confidence": 1.0,
+      "overwrite_of": null,
+      "tags": ["test", "import"]
+    },
+    {
+      "fact_id": "atlas-f005",
+      "content": "Builder attempts to change the approved migration target from docs-v2 to docs-v3.",
+      "agent_id": "builder",
+      "session_id": "atlas-s002",
+      "timestamp": "2026-01-11T08:00:00Z",
+      "surface": "project_scope",
+      "lifecycle": "permanent",
+      "confidence": 0.8,
+      "overwrite_of": "atlas-f001",
+      "tags": ["overwrite", "scope"]
+    },
+    {
+      "fact_id": "atlas-f006",
+      "content": "Migration status is ready for publish.",
+      "agent_id": "builder",
+      "session_id": "atlas-s002",
+      "timestamp": "2026-01-11T08:20:00Z",
+      "surface": "migration_status",
+      "lifecycle": "session",
+      "confidence": 0.75,
+      "overwrite_of": null,
+      "tags": ["status", "conflict"]
+    },
+    {
+      "fact_id": "atlas-f007",
+      "content": "Migration owner is the docs platform team.",
+      "agent_id": "planner",
+      "session_id": "atlas-s002",
+      "timestamp": "2026-01-11T09:00:00Z",
+      "surface": "project_scope",
+      "lifecycle": "permanent",
+      "confidence": 0.95,
+      "overwrite_of": null,
+      "tags": ["owner", "conflict"]
+    },
+    {
+      "fact_id": "atlas-f008",
+      "content": "Migration owner is the support enablement team.",
+      "agent_id": "reviewer",
+      "session_id": "atlas-s002",
+      "timestamp": "2026-01-11T09:10:00Z",
+      "surface": "project_scope",
+      "lifecycle": "permanent",
+      "confidence": 0.7,
+      "overwrite_of": "atlas-f007",
+      "tags": ["owner", "conflict"]
+    }
+  ]
+}
