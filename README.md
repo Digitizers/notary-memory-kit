@@ -4,6 +4,13 @@ Notary Memory Kit is a local companion toolkit for preparing governed agent-memo
 
 It helps evaluate, audit, and export synthetic memory evidence so governance behavior can be inspected with Notary.
 
+## Status
+
+This repository is an early public demo built around synthetic fixtures.
+It is intended for review, experimentation, and evidence-shape discussion.
+
+It is not packaged, released, or supported as production infrastructure.
+
 ## What It Does
 
 - Ingests synthetic demo logs and session facts.
@@ -41,6 +48,8 @@ To use an existing local Notary checkout:
 NOTARY_REPO=/path/to/notary scripts/run_demo.sh
 ```
 
+By default, the demo checks out a pinned Notary revision so benchmark behavior is reproducible across local and CI runs.
+
 ## Manual Flow
 
 ```bash
@@ -60,6 +69,12 @@ scripts/audit_public_tree.sh .
 
 The helper checks for generated outputs, unsupported package claims, and private-boundary terms. It is a guardrail, not a complete security review.
 
+CI runs this audit, Python compilation, and the synthetic demo on pushes and pull requests.
+
 ## Boundary
 
 Use this kit as a synthetic evidence-preparation companion for Notary. Keep real memory data, private implementation details, and generated outputs out of the reviewed tree.
+
+## License
+
+MIT, matching the public Notary repository.
