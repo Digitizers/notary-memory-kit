@@ -71,6 +71,10 @@ The helper checks for generated outputs, unsupported package claims, and private
 
 CI runs this audit, Python compilation, and the synthetic demo on pushes and pull requests.
 
+## Evidence Schema
+
+The current demo export shape is documented in [`docs/evidence-schema.md`](docs/evidence-schema.md).
+
 ## Boundary
 
 Use this kit as a synthetic evidence-preparation companion for Notary. Keep real memory data, private implementation details, and generated outputs out of the reviewed tree.
