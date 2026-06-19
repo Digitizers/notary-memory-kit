@@ -11,6 +11,8 @@ cd "$ROOT"
 
 rm -rf "$DEMO/.notary-memory-kit" "$ROOT/out"
 
+echo "Using Notary revision: $NOTARY_COMMIT"
+
 python3 -m notary_memory_kit.cli ingest "$DEMO"
 python3 -m notary_memory_kit.cli facts "$DEMO"
 python3 -m notary_memory_kit.cli search "$DEMO" "migration target"

@@ -42,13 +42,29 @@ The demo writes generated local state under ignored paths:
 - `demo/atlas-docs-migration/.notary-memory-kit/`
 - `out/`
 
-To use an existing local Notary checkout:
+By default, the demo checks out a pinned Notary revision so benchmark behavior is reproducible across local and CI runs.
 
-```bash
-NOTARY_REPO=/path/to/notary scripts/run_demo.sh
+## Notary Revision Pin
+
+`scripts/run_demo.sh` currently pins Notary to:
+
+```text
+6a7b73f8d15bca1b23be67f63446ffaac3b032af
 ```
 
-By default, the demo checks out a pinned Notary revision so benchmark behavior is reproducible across local and CI runs.
+This pin is for the synthetic demo only. It keeps local and CI scoring deterministic, but it is not a compatibility promise for other Notary revisions.
+
+To test the demo against a different Notary commit:
+
+```bash
+NOTARY_COMMIT=<commit-sha> scripts/run_demo.sh
+```
+
+To test with an existing local Notary checkout:
+
+```bash
+NOTARY_REPO=/path/to/notary NOTARY_COMMIT=<commit-sha> scripts/run_demo.sh
+```
 
 ## Manual Flow
 
