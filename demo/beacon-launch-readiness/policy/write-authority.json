@@ -1,0 +1,19 @@
+{
+  "authorities": [
+    {
+      "agent_id": "coordinator",
+      "allowed_surfaces": ["launch_scope", "launch_status"],
+      "can_overwrite": true
+    },
+    {
+      "agent_id": "engineer",
+      "allowed_surfaces": ["implementation_notes", "launch_status"],
+      "can_overwrite": false
+    },
+    {
+      "agent_id": "qa",
+      "allowed_surfaces": ["launch_status", "launch_scope"],
+      "can_overwrite": true
+    }
+  ]
+}

@@ -31,7 +31,10 @@ It is not packaged, released, or supported as production infrastructure.
 
 ## Demo
 
-The included demo uses only synthetic `Atlas Docs Migration` data.
+The included demo uses synthetic scenarios only:
+
+- `Atlas Docs Migration`
+- `Beacon Launch Readiness`
 
 ```bash
 scripts/run_demo.sh
@@ -39,7 +42,7 @@ scripts/run_demo.sh
 
 The demo writes generated local state under ignored paths:
 
-- `demo/atlas-docs-migration/.notary-memory-kit/`
+- `demo/*/.notary-memory-kit/`
 - `out/`
 
 By default, the demo checks out a pinned Notary revision so benchmark behavior is reproducible across local and CI runs.
