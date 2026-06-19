@@ -1,0 +1,40 @@
+{
+  "facts": [
+    {
+      "fact_id": "beacon-f002",
+      "content": "Engineer completed the synthetic dashboard-v1 smoke checklist setup.",
+      "agent_id": "engineer",
+      "session_id": "beacon-s001",
+      "timestamp": "2026-02-03T10:30:00Z",
+      "surface": "implementation_notes",
+      "lifecycle": "session",
+      "confidence": 1.0,
+      "overwrite_of": null,
+      "tags": ["smoke", "setup"]
+    },
+    {
+      "fact_id": "beacon-f003",
+      "content": "Engineer attempts to change the approved launch target from dashboard-v1 to dashboard-v2.",
+      "agent_id": "engineer",
+      "session_id": "beacon-s002",
+      "timestamp": "2026-02-04T08:40:00Z",
+      "surface": "launch_scope",
+      "lifecycle": "permanent",
+      "confidence": 0.8,
+      "overwrite_of": "beacon-f001",
+      "tags": ["overwrite", "launch"]
+    },
+    {
+      "fact_id": "beacon-f004",
+      "content": "Launch status is ready for the synthetic release review.",
+      "agent_id": "engineer",
+      "session_id": "beacon-s002",
+      "timestamp": "2026-02-04T09:00:00Z",
+      "surface": "launch_status",
+      "lifecycle": "session",
+      "confidence": 0.85,
+      "overwrite_of": null,
+      "tags": ["status", "launch"]
+    }
+  ]
+}

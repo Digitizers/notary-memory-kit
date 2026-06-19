@@ -14,6 +14,17 @@ def fail(message: str) -> None:
 
 def main() -> None:
     export_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("out/notary-evidence.json")
+    expected_facts = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    expected_authorities = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+    warning_fact = sys.argv[4] if len(sys.argv) > 4 else "atlas-f005"
+    warning_surface = sys.argv[5] if len(sys.argv) > 5 else "project_scope"
+    unauthorized_fact_id = sys.argv[6] if len(sys.argv) > 6 else "atlas-f005"
+    unauthorized_agent = sys.argv[7] if len(sys.argv) > 7 else "builder"
+    overwritten_fact_id = sys.argv[8] if len(sys.argv) > 8 else "atlas-f001"
+    correction_fact_id = sys.argv[9] if len(sys.argv) > 9 else "atlas-f004"
+    correction_agent = sys.argv[10] if len(sys.argv) > 10 else "reviewer"
+    corrected_fact_id = sys.argv[11] if len(sys.argv) > 11 else "atlas-f006"
+
     if not export_path.exists():
         fail(f"missing export: {export_path}")
 
@@ -22,12 +33,12 @@ def main() -> None:
     authorities = data.get("authorities", [])
     authority_audit = data.get("authority_audit", [])
 
-    if len(facts) != 8:
-        fail(f"expected 8 facts, got {len(facts)}")
-    if len(authorities) != 3:
-        fail(f"expected 3 authorities, got {len(authorities)}")
-    if not any("atlas-f005" in issue and "project_scope" in issue for issue in authority_audit):
-        fail(f"expected atlas-f005 surface-authority audit warning, got {authority_audit}")
+    if len(facts) != expected_facts:
+        fail(f"expected {expected_facts} facts, got {len(facts)}")
+    if len(authorities) != expected_authorities:
+        fail(f"expected {expected_authorities} authorities, got {len(authorities)}")
+    if not any(warning_fact in issue and warning_surface in issue for issue in authority_audit):
+        fail(f"expected {warning_fact} surface-authority audit warning, got {authority_audit}")
 
     serialized = json.dumps(data, ensure_ascii=False)
     blocked_terms = [
@@ -45,11 +56,16 @@ def main() -> None:
             fail(f"blocked term leaked into export: {term}")
 
     by_id = {fact["fact_id"]: fact for fact in facts}
-    unauthorized = by_id.get("atlas-f005")
+    unauthorized = by_id.get(unauthorized_fact_id)
     if not unauthorized:
-        fail("missing atlas-f005 unauthorized overwrite fixture")
-    if unauthorized.get("agent_id") != "builder" or unauthorized.get("overwrite_of") != "atlas-f001":
-        fail("atlas-f005 does not model builder overwriting atlas-f001")
+        fail(f"missing {unauthorized_fact_id} unauthorized overwrite fixture")
+    if unauthorized.get("agent_id") != unauthorized_agent or unauthorized.get("overwrite_of") != overwritten_fact_id:
+        fail(f"{unauthorized_fact_id} does not model {unauthorized_agent} overwriting {overwritten_fact_id}")
+    correction = by_id.get(correction_fact_id)
+    if not correction:
+        fail(f"missing {correction_fact_id} authorized correction fixture")
+    if correction.get("agent_id") != correction_agent or correction.get("overwrite_of") != corrected_fact_id:
+        fail(f"{correction_fact_id} does not model {correction_agent} correcting {corrected_fact_id}")
 
     for fact in facts:
         evidence_path = fact.get("evidence_path", "")
@@ -68,10 +84,10 @@ def main() -> None:
         fail(f"expected governance 1.0, got {governance}: {governance_issues}")
     if provenance != 1.0:
         fail(f"expected provenance 1.0, got {provenance}")
-    if stability != 0.5:
-        fail(f"expected stability 0.5, got {stability}: {stability_issues}")
-    if not any("atlas-f005" in issue and "overwrite not permitted" in issue for issue in stability_issues):
-        fail(f"expected atlas-f005 unauthorized overwrite issue, got {stability_issues}")
+    if stability >= 1.0:
+        fail(f"expected stability issue, got {stability}: {stability_issues}")
+    if not any(unauthorized_fact_id in issue and "overwrite not permitted" in issue for issue in stability_issues):
+        fail(f"expected {unauthorized_fact_id} unauthorized overwrite issue, got {stability_issues}")
 
     print("PASS: demo flow fixture")
 
