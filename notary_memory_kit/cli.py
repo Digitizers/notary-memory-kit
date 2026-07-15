@@ -123,13 +123,19 @@ def validate_facts(facts: list[dict[str, Any]]) -> list[str]:
 
         confidence = fact.get("confidence")
         if confidence is not None:
-            try:
-                confidence_value = float(confidence)
-            except (TypeError, ValueError):
+            if isinstance(confidence, bool):
+                # bool is an int subclass, so float(True) == 1.0 would pass —
+                # but a boolean is not a confidence value. Rejecting it here
+                # keeps validation aligned with the conflict audit's coercion.
                 issues.append(f"[{fact_id}] invalid confidence {confidence!r}")
             else:
-                if not (0 <= confidence_value <= 1):
-                    issues.append(f"[{fact_id}] confidence out of range: {confidence}")
+                try:
+                    confidence_value = float(confidence)
+                except (TypeError, ValueError):
+                    issues.append(f"[{fact_id}] invalid confidence {confidence!r}")
+                else:
+                    if not (0 <= confidence_value <= 1):
+                        issues.append(f"[{fact_id}] confidence out of range: {confidence}")
     return issues
 
 
@@ -246,10 +252,15 @@ def audit_cross_agent_conflicts(authorities: list[dict[str, Any]], facts: list[d
         if not target_agent or target_agent == agent_id:
             continue
 
+        # Authority must cover the surface of the fact being displaced as
+        # well — relabeling the replacement to an allowed surface must not
+        # launder a takeover of memory the agent has no authority over.
+        allowed_surfaces = (authority or {}).get("allowed_surfaces", [])
         authorized = bool(
             authority
             and authority.get("can_overwrite")
-            and fact.get("surface") in authority.get("allowed_surfaces", [])
+            and fact.get("surface") in allowed_surfaces
+            and target.get("surface") in allowed_surfaces
         )
         if not authorized:
             issues.append(
