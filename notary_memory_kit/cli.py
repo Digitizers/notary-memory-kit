@@ -123,13 +123,19 @@ def validate_facts(facts: list[dict[str, Any]]) -> list[str]:
 
         confidence = fact.get("confidence")
         if confidence is not None:
-            try:
-                confidence_value = float(confidence)
-            except (TypeError, ValueError):
+            if isinstance(confidence, bool):
+                # bool is an int subclass, so float(True) == 1.0 would pass —
+                # but a boolean is not a confidence value. Rejecting it here
+                # keeps validation aligned with the conflict audit's coercion.
                 issues.append(f"[{fact_id}] invalid confidence {confidence!r}")
             else:
-                if not (0 <= confidence_value <= 1):
-                    issues.append(f"[{fact_id}] confidence out of range: {confidence}")
+                try:
+                    confidence_value = float(confidence)
+                except (TypeError, ValueError):
+                    issues.append(f"[{fact_id}] invalid confidence {confidence!r}")
+                else:
+                    if not (0 <= confidence_value <= 1):
+                        issues.append(f"[{fact_id}] confidence out of range: {confidence}")
     return issues
 
 
@@ -159,6 +165,17 @@ def validate_authorities(authorities: list[dict[str, Any]], facts: list[dict[str
             issues.append(f"[authority:{agent_id}] invalid allowed_surfaces")
         if not isinstance(authority.get("can_overwrite"), bool):
             issues.append(f"[authority:{agent_id}] can_overwrite must be boolean")
+
+        ceiling = authority.get("max_confidence_claim")
+        if ceiling is not None:
+            # A malformed ceiling must fail validation, not silently mean
+            # "no ceiling" — that would suppress the audit's
+            # confidence-inflation warnings for every fact by this agent.
+            ceiling_value = _coerce_confidence(ceiling)
+            if ceiling_value is None:
+                issues.append(f"[authority:{agent_id}] invalid max_confidence_claim {ceiling!r}")
+            elif not (0 <= ceiling_value <= 1):
+                issues.append(f"[authority:{agent_id}] max_confidence_claim out of range: {ceiling}")
 
     known_agents = {authority.get("agent_id") for authority in authorities}
     for fact in facts:
@@ -191,6 +208,93 @@ def audit_authority_surfaces(authorities: list[dict[str, Any]], facts: list[dict
     return issues
 
 
+def _coerce_confidence(value: Any) -> float | None:
+    """Coerce a confidence value the same way validate_facts accepts it.
+
+    The schema allows numeric strings; the audit must not silently skip
+    values the validator declared valid.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def audit_cross_agent_conflicts(authorities: list[dict[str, Any]], facts: list[dict[str, Any]]) -> list[str]:
+    """Warnings for cross-agent conflicts and poisoning signals the
+    evidence can prove.
+
+    - An overwrite whose in-set target was written by a DIFFERENT agent
+      is a cross-agent conflict; it is only clean when the overwriting
+      agent holds can_overwrite and the surface.
+    - A cross-agent overwrite that lowers the target's confidence is a
+      dilution signal even when authorized.
+    - A fact whose confidence exceeds its agent's max_confidence_claim
+      (when the authority declares one) is confidence inflation.
+
+    Warnings only, matching the authority audit: the kit prepares
+    evidence for review, it does not block ingestion.
+    """
+    issues: list[str] = []
+    auth_map = {authority.get("agent_id"): authority for authority in authorities}
+    facts_by_id = {fact.get("fact_id"): fact for fact in facts if fact.get("fact_id")}
+
+    for fact in facts:
+        fact_id = fact.get("fact_id", "<unknown>")
+        agent_id = fact.get("agent_id")
+        if not agent_id:
+            continue
+
+        authority = auth_map.get(agent_id)
+        ceiling = _coerce_confidence((authority or {}).get("max_confidence_claim"))
+        confidence = _coerce_confidence(fact.get("confidence"))
+        if ceiling is not None and confidence is not None and confidence > ceiling:
+            issues.append(
+                f"[{fact_id}] agent '{agent_id}' confidence {confidence}"
+                f" above max_confidence_claim {ceiling} — confidence inflation"
+            )
+
+        target = facts_by_id.get(fact.get("overwrite_of"))
+        if not target or target is fact:
+            continue
+        target_agent = target.get("agent_id")
+        if not target_agent or target_agent == agent_id:
+            continue
+
+        # Authority must cover the surface of the fact being displaced as
+        # well — relabeling the replacement to an allowed surface must not
+        # launder a takeover of memory the agent has no authority over.
+        allowed_surfaces = (authority or {}).get("allowed_surfaces", [])
+        authorized = bool(
+            authority
+            and authority.get("can_overwrite")
+            and fact.get("surface") in allowed_surfaces
+            and target.get("surface") in allowed_surfaces
+        )
+        if not authorized:
+            issues.append(
+                f"[{fact_id}] agent '{agent_id}' overwrites fact"
+                f" '{target.get('fact_id')}' by agent '{target_agent}'"
+                " without authority — unresolved cross-agent conflict"
+            )
+
+        target_confidence = _coerce_confidence(target.get("confidence"))
+        if (
+            confidence is not None
+            and target_confidence is not None
+            and confidence < target_confidence
+        ):
+            issues.append(
+                f"[{fact_id}] agent '{agent_id}' lowers confidence of fact"
+                f" '{target.get('fact_id')}' by agent '{target_agent}'"
+                f" ({target_confidence} -> {confidence}) — cross-agent confidence dilution"
+            )
+
+    return issues
+
+
 def load_store(target: Path) -> dict[str, Any]:
     if target.is_dir():
         path = default_store_path(target)
@@ -215,14 +319,18 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         "facts": facts,
         "authorities": authorities,
         "authority_audit": audit_authority_surfaces(authorities, facts),
+        "conflict_audit": audit_cross_agent_conflicts(authorities, facts),
     }
     store_path = Path(args.store) if args.store else default_store_path(root)
     store_path.parent.mkdir(parents=True, exist_ok=True)
     store_path.write_text(json.dumps(store, indent=2, ensure_ascii=False), encoding="utf-8")
     audit_count = len(store["authority_audit"])
+    conflict_count = len(store["conflict_audit"])
     print(f"Ingested {len(facts)} facts and {len(authorities)} authorities -> {store_path}")
     if audit_count:
         print(f"Authority audit warnings: {audit_count}")
+    if conflict_count:
+        print(f"Conflict audit warnings: {conflict_count}")
     return 0
 
 
@@ -260,6 +368,7 @@ def cmd_export(args: argparse.Namespace) -> int:
         "facts": store.get("facts", []),
         "authorities": store.get("authorities", []),
         "authority_audit": store.get("authority_audit", []),
+        "conflict_audit": store.get("conflict_audit", []),
     }
     output.write_text(json.dumps(export, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"Exported {len(export['facts'])} facts -> {output}")
