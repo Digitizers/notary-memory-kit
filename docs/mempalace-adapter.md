@@ -64,9 +64,20 @@ export time.
 
 ## Skipped rows
 
-Registry sentinels (`ingest_mode: "registry"`) — bookkeeping rows MemPalace
-writes so zero-chunk source files are not re-mined — are excluded from the
-export, matching MemPalace's own sync behavior. They are not memories.
+Registry sentinels — bookkeeping rows MemPalace writes so zero-chunk source
+files are not re-mined — are excluded from the export using MemPalace's own
+full sentinel predicate (`room == "_registry"`, `ingest_mode == "registry"`,
+or a drawer id starting with `_reg_`), so legacy or partially migrated
+sentinels are excluded too. They are not memories.
+
+## Chunked drawers
+
+Content above MemPalace's `chunk_size` is stored as multiple physical rows
+carrying `parent_drawer_id` (oversized diary entries carry
+`parent_entry_id`) plus `chunk_index`. The adapter rejoins each group in
+chunk order and exports **one** fact under the logical parent id, matching
+how MemPalace's own get/list paths present them — so one memory is one
+fact, not many partial ones.
 
 ## Limitations
 

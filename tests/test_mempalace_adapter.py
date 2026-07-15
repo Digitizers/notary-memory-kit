@@ -12,7 +12,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from notary_memory_kit.mempalace_adapter import (  # noqa: E402
+    _collapse_chunked_rows,
     _drawer_fact,
+    _is_registry_row,
     _normalize_timestamp,
     build_snapshot,
     export_knowledge_graph,
@@ -94,6 +96,51 @@ def build_fixture_kg(db_path: Path) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def test_registry_predicate_matches_all_sentinel_forms() -> None:
+    # The three markers from MemPalace's sync._is_registry_row.
+    assert _is_registry_row({"ingest_mode": "registry"})
+    assert _is_registry_row({"room": "_registry"})
+    assert _is_registry_row({}, "_reg_abc123")
+    assert not _is_registry_row({"room": "notes", "ingest_mode": "convos"}, "d-1")
+
+    # _drawer_fact skips every form, including legacy metadata.
+    assert _drawer_fact("d-1", "x", {"room": "_registry"}) is None
+    assert _drawer_fact("_reg_abc", "x", {"wing": "w", "room": "r"}) is None
+
+    print("PASS: full registry sentinel predicate")
+
+
+def test_chunked_drawers_collapse_to_one_logical_fact() -> None:
+    rows = [
+        # Out-of-order chunks of one oversized MCP drawer.
+        ("d-1_chunk_000001", "world", {"parent_drawer_id": "d-1", "chunk_index": 1,
+                                       "wing": "w", "room": "r", "added_by": "mcp"}),
+        ("d-1_chunk_000000", "hello ", {"parent_drawer_id": "d-1", "chunk_index": 0,
+                                        "wing": "w", "room": "r", "added_by": "mcp"}),
+        # A plain single-row drawer.
+        ("d-2", "standalone", {"wing": "w", "room": "r", "added_by": "mcp"}),
+        # An oversized diary entry (parent_entry_id linkage).
+        ("e-1_chunk_000000", "dear ", {"parent_entry_id": "e-1", "chunk_index": 0,
+                                       "wing": "w", "room": "diary", "agent": "writer"}),
+        ("e-1_chunk_000001", "diary", {"parent_entry_id": "e-1", "chunk_index": 1,
+                                       "wing": "w", "room": "diary", "agent": "writer"}),
+    ]
+
+    collapsed = {fact_id: (document, meta) for fact_id, document, meta in _collapse_chunked_rows(rows)}
+
+    assert set(collapsed) == {"d-1", "d-2", "e-1"}, set(collapsed)
+    assert collapsed["d-1"][0] == "hello world"
+    assert collapsed["e-1"][0] == "dear diary"
+    assert collapsed["d-2"][0] == "standalone"
+    # chunk_index must not leak into the merged logical metadata.
+    assert "chunk_index" not in collapsed["d-1"][1]
+
+    fact = _drawer_fact("e-1", *collapsed["e-1"])
+    assert fact is not None and fact["fact_id"] == "e-1" and fact["agent_id"] == "writer"
+
+    print("PASS: chunked drawers collapse")
 
 
 def test_knowledge_graph_export() -> None:
@@ -294,6 +341,8 @@ def test_export_scores_under_notary_when_available() -> None:
 def run_all() -> None:
     test_timestamp_normalization()
     test_drawer_facts_skip_sentinels_and_keep_diary_authors()
+    test_registry_predicate_matches_all_sentinel_forms()
+    test_chunked_drawers_collapse_to_one_logical_fact()
     test_knowledge_graph_export()
     test_synthetic_authorities_are_opt_in_and_marked()
     test_drawer_export_requires_chromadb()

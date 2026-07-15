@@ -42,7 +42,7 @@ import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def _normalize_timestamp(value: Any, assume_utc: bool = False) -> str:
@@ -144,6 +144,63 @@ def export_knowledge_graph(db_path: Path) -> List[Dict[str, Any]]:
     return facts
 
 
+def _is_registry_row(meta: Optional[Dict[str, Any]], drawer_id: str = "") -> bool:
+    """Mirror MemPalace's sync._is_registry_row sentinel predicate.
+
+    Legacy or partially migrated palaces may carry sentinels that only
+    match one of the three markers, so all of them are checked.
+    """
+    meta = meta or {}
+    if meta.get("room") == "_registry":
+        return True
+    if meta.get("ingest_mode") == "registry":
+        return True
+    if drawer_id and str(drawer_id).startswith("_reg_"):
+        return True
+    return False
+
+
+def _collapse_chunked_rows(
+    rows: List[Tuple[str, Optional[str], Optional[Dict[str, Any]]]],
+) -> List[Tuple[str, str, Dict[str, Any]]]:
+    """Rejoin chunked drawer rows into logical memories.
+
+    MemPalace's MCP writer splits content above chunk_size into physical
+    rows carrying parent_drawer_id (oversized diary entries carry
+    parent_entry_id) plus chunk_index, and its own get/list paths rejoin
+    them into one logical drawer. Exporting raw rows would count one
+    memory as many partial facts, so chunk groups are concatenated in
+    chunk_index order under the logical parent id.
+    """
+    singles: List[Tuple[str, str, Dict[str, Any]]] = []
+    groups: Dict[str, List[Tuple[Any, int, str, Dict[str, Any]]]] = {}
+
+    for position, (drawer_id, document, meta) in enumerate(rows):
+        meta = meta or {}
+        parent_id = meta.get("parent_drawer_id") or meta.get("parent_entry_id")
+        if parent_id:
+            groups.setdefault(str(parent_id), []).append(
+                (meta.get("chunk_index"), position, document or "", meta)
+            )
+        else:
+            singles.append((drawer_id, document or "", meta))
+
+    collapsed = singles
+    for parent_id, chunks in groups.items():
+        chunks.sort(
+            key=lambda item: (
+                item[0] if isinstance(item[0], int) else 0,
+                item[1],
+            )
+        )
+        merged_meta = dict(chunks[0][3])
+        merged_meta.pop("chunk_index", None)
+        collapsed.append(
+            (parent_id, "".join(chunk[2] for chunk in chunks), merged_meta)
+        )
+    return collapsed
+
+
 def _drawer_fact(
     drawer_id: str,
     document: Optional[str],
@@ -151,14 +208,14 @@ def _drawer_fact(
 ) -> Optional[Dict[str, Any]]:
     """Convert one palace drawer into a Notary fact, or None to skip it.
 
-    Registry sentinels (ingest_mode == "registry") are bookkeeping rows
-    MemPalace writes so zero-chunk source files are not re-mined; they
-    are not memories and MemPalace's own sync path skips them the same
-    way. The MCP diary writer records the author under "agent" rather
-    than "added_by", so both keys are consulted.
+    Registry sentinels are bookkeeping rows MemPalace writes so
+    zero-chunk source files are not re-mined; they are not memories and
+    MemPalace's own sync path skips them the same way. The MCP diary
+    writer records the author under "agent" rather than "added_by", so
+    both keys are consulted.
     """
     meta = meta or {}
-    if meta.get("ingest_mode") == "registry":
+    if _is_registry_row(meta, drawer_id):
         return None
 
     wing = meta.get("wing", "")
@@ -199,7 +256,7 @@ def export_palace_drawers(
     client = chromadb.PersistentClient(path=str(palace_path))
     collection = client.get_collection(collection_name)
 
-    facts = []
+    rows: List[Tuple[str, Optional[str], Optional[Dict[str, Any]]]] = []
     offset = 0
     batch = 1000
     while True:
@@ -213,11 +270,14 @@ def export_palace_drawers(
             break
         documents = result.get("documents") or []
         metadatas = result.get("metadatas") or []
-        for drawer_id, document, meta in zip(ids, documents, metadatas):
-            fact = _drawer_fact(drawer_id, document, meta)
-            if fact is not None:
-                facts.append(fact)
+        rows.extend(zip(ids, documents, metadatas))
         offset += len(ids)
+
+    facts = []
+    for drawer_id, document, meta in _collapse_chunked_rows(rows):
+        fact = _drawer_fact(drawer_id, document, meta)
+        if fact is not None:
+            facts.append(fact)
     return facts
 
 
