@@ -29,7 +29,7 @@ PYTHONPATH=/path/to/notary python3 -m benchmark.runner out/mempalace-notary-evid
 |---|---|---|
 | `fact_id` | `triples.id` | drawer id |
 | `content` | `"<subject name> <predicate> <object name>"` (names resolved via `entities`) | document text |
-| `agent_id` | `adapter_name` | `added_by` |
+| `agent_id` | `adapter_name` | `added_by` → `agent` (the MCP diary writer uses `agent`) |
 | `session_id` | `source_file` → `source_drawer_id` → `source_closet` | `source_file` |
 | `timestamp` | `valid_from` → `extracted_at` | `authored_at` → `filed_at` |
 | `surface` | `predicate` | `"<wing>/<room>"` |
@@ -51,6 +51,22 @@ explicit overwrite links**. The adapter maps only what actually exists:
   nothing about real write control.
 - Missing provenance (e.g. a triple with no `source_file`) stays empty and
   fails governance, as it should.
+
+## Timestamps
+
+All exported timestamps are normalized to ISO-8601 with a `T` separator.
+Knowledge-graph values are UTC (SQLite `CURRENT_TIMESTAMP`; date-only
+`valid_from` becomes `T00:00:00Z`) and gain a `Z` suffix. Palace drawer
+values (`filed_at`/`authored_at`) are written by MemPalace as **local,
+timezone-naive** `datetime.now().isoformat()` — they are kept naive rather
+than falsely declared UTC, because the writing host's offset is unknown at
+export time.
+
+## Skipped rows
+
+Registry sentinels (`ingest_mode: "registry"`) — bookkeeping rows MemPalace
+writes so zero-chunk source files are not re-mined — are excluded from the
+export, matching MemPalace's own sync behavior. They are not memories.
 
 ## Limitations
 

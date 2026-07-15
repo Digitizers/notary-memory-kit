@@ -45,14 +45,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-def _normalize_timestamp(value: Any) -> str:
-    """Normalize MemPalace time values to ISO-8601 with T and Z.
+def _normalize_timestamp(value: Any, assume_utc: bool = False) -> str:
+    """Normalize MemPalace time values to ISO-8601 with a T separator.
 
-    MemPalace stores date-only valid_from values ("2026-05-01") and
-    SQLite CURRENT_TIMESTAMP extracted_at values ("YYYY-MM-DD HH:MM:SS",
-    both UTC and timezone-naive). Emitting them verbatim produces
-    snapshots whose timestamps mix naive and aware forms, which the
-    schema does not document and chronological ordering cannot compare.
+    Knowledge-graph times are UTC (SQLite CURRENT_TIMESTAMP fills
+    extracted_at as "YYYY-MM-DD HH:MM:SS"; date-only valid_from values
+    are calendar dates) — pass assume_utc=True to mark those naive
+    values with Z. Palace drawer times (filed_at/authored_at) are
+    written as LOCAL, timezone-naive datetime.now().isoformat() —
+    those stay naive rather than being falsely declared UTC, because
+    the writing host's offset is unknown at export time.
     Unparseable values pass through so validation can flag them.
     """
     if not isinstance(value, str) or not value:
@@ -62,7 +64,7 @@ def _normalize_timestamp(value: Any) -> str:
     except ValueError:
         return value
     if parsed.tzinfo is None:
-        return parsed.isoformat() + "Z"
+        return parsed.isoformat() + ("Z" if assume_utc else "")
     return parsed.isoformat().replace("+00:00", "Z")
 
 
@@ -131,7 +133,8 @@ def export_knowledge_graph(db_path: Path) -> List[Dict[str, Any]]:
                 or row["source_closet"]
                 or "",
             "timestamp": _normalize_timestamp(
-                row["valid_from"] or _row_value(row, "extracted_at")
+                row["valid_from"] or _row_value(row, "extracted_at"),
+                assume_utc=True,
             ),
             "surface": row["predicate"],
             "lifecycle": "permanent",
@@ -139,6 +142,41 @@ def export_knowledge_graph(db_path: Path) -> List[Dict[str, Any]]:
             "overwrite_of": overwrites.get(row["id"]),
         })
     return facts
+
+
+def _drawer_fact(
+    drawer_id: str,
+    document: Optional[str],
+    meta: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Convert one palace drawer into a Notary fact, or None to skip it.
+
+    Registry sentinels (ingest_mode == "registry") are bookkeeping rows
+    MemPalace writes so zero-chunk source files are not re-mined; they
+    are not memories and MemPalace's own sync path skips them the same
+    way. The MCP diary writer records the author under "agent" rather
+    than "added_by", so both keys are consulted.
+    """
+    meta = meta or {}
+    if meta.get("ingest_mode") == "registry":
+        return None
+
+    wing = meta.get("wing", "")
+    room = meta.get("room", "")
+    surface = f"{wing}/{room}" if wing or room else ""
+    return {
+        "fact_id": drawer_id,
+        "content": document or "",
+        "agent_id": meta.get("added_by") or meta.get("agent") or "",
+        "session_id": meta.get("source_file", ""),
+        "timestamp": _normalize_timestamp(
+            meta.get("authored_at") or meta.get("filed_at")
+        ),
+        "surface": surface,
+        "lifecycle": "permanent",
+        "confidence": 1.0,
+        "overwrite_of": None,
+    }
 
 
 def export_palace_drawers(
@@ -176,23 +214,9 @@ def export_palace_drawers(
         documents = result.get("documents") or []
         metadatas = result.get("metadatas") or []
         for drawer_id, document, meta in zip(ids, documents, metadatas):
-            meta = meta or {}
-            wing = meta.get("wing", "")
-            room = meta.get("room", "")
-            surface = f"{wing}/{room}" if wing or room else ""
-            facts.append({
-                "fact_id": drawer_id,
-                "content": document or "",
-                "agent_id": meta.get("added_by", ""),
-                "session_id": meta.get("source_file", ""),
-                "timestamp": _normalize_timestamp(
-                    meta.get("authored_at") or meta.get("filed_at")
-                ),
-                "surface": surface,
-                "lifecycle": "permanent",
-                "confidence": 1.0,
-                "overwrite_of": None,
-            })
+            fact = _drawer_fact(drawer_id, document, meta)
+            if fact is not None:
+                facts.append(fact)
         offset += len(ids)
     return facts
 

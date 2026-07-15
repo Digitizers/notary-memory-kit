@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from notary_memory_kit.mempalace_adapter import (  # noqa: E402
+    _drawer_fact,
     _normalize_timestamp,
     build_snapshot,
     export_knowledge_graph,
@@ -135,10 +136,14 @@ def test_knowledge_graph_export() -> None:
 
 
 def test_timestamp_normalization() -> None:
-    # Date-only valid_from (supported by MemPalace's KG).
-    assert _normalize_timestamp("2026-05-01") == "2026-05-01T00:00:00Z"
-    # SQLite CURRENT_TIMESTAMP form: space separator, naive UTC.
-    assert _normalize_timestamp("2026-06-02 10:00:00") == "2026-06-02T10:00:00Z"
+    # KG values are UTC (assume_utc=True): date-only valid_from and
+    # SQLite CURRENT_TIMESTAMP (space separator, naive) gain Z.
+    assert _normalize_timestamp("2026-05-01", assume_utc=True) == "2026-05-01T00:00:00Z"
+    assert _normalize_timestamp("2026-06-02 10:00:00", assume_utc=True) == "2026-06-02T10:00:00Z"
+    # Drawer values are LOCAL naive (datetime.now().isoformat()); they
+    # keep the T separator but must not be falsely declared UTC.
+    assert _normalize_timestamp("2026-06-02 10:00:00") == "2026-06-02T10:00:00"
+    assert _normalize_timestamp("2026-06-02T10:00:00.123456") == "2026-06-02T10:00:00.123456"
     # Already-normalized values are preserved.
     assert _normalize_timestamp("2026-05-01T09:00:00Z") == "2026-05-01T09:00:00Z"
     # Offset forms stay aware (only +00:00 is folded to Z).
@@ -149,6 +154,51 @@ def test_timestamp_normalization() -> None:
     assert _normalize_timestamp("not-a-date") == "not-a-date"
 
     print("PASS: timestamp normalization")
+
+
+def test_drawer_facts_skip_sentinels_and_keep_diary_authors() -> None:
+    # Registry sentinel (convo_miner._register_file) must be skipped,
+    # exactly as MemPalace's own sync path does.
+    sentinel = _drawer_fact(
+        "sentinel-1",
+        "[registry] convos/session-a.jsonl",
+        {
+            "wing": "projects",
+            "room": "_registry",
+            "source_file": "convos/session-a.jsonl",
+            "added_by": "mempalace",
+            "filed_at": "2026-06-02T10:00:00",
+            "ingest_mode": "registry",
+        },
+    )
+    assert sentinel is None
+
+    # MCP diary drawers record the author under "agent", not "added_by".
+    diary = _drawer_fact(
+        "diary-1",
+        "Shipped the adapter today.",
+        {
+            "wing": "personal",
+            "room": "diary",
+            "agent": "diary-writer",
+            "filed_at": "2026-06-02T10:00:00",
+        },
+    )
+    assert diary is not None
+    assert diary["agent_id"] == "diary-writer"
+    assert diary["surface"] == "personal/diary"
+    # Local-naive drawer time stays naive (no fabricated Z).
+    assert diary["timestamp"] == "2026-06-02T10:00:00"
+
+    # added_by wins when both keys exist.
+    both = _drawer_fact(
+        "d-2",
+        "content",
+        {"added_by": "miner", "agent": "other", "wing": "w", "room": "r"},
+    )
+    assert both is not None and both["agent_id"] == "miner"
+
+    print("PASS: drawer sentinel skip + diary author fallback")
 
 
 def test_synthetic_authorities_are_opt_in_and_marked() -> None:
@@ -243,6 +293,7 @@ def test_export_scores_under_notary_when_available() -> None:
 
 def run_all() -> None:
     test_timestamp_normalization()
+    test_drawer_facts_skip_sentinels_and_keep_diary_authors()
     test_knowledge_graph_export()
     test_synthetic_authorities_are_opt_in_and_marked()
     test_drawer_export_requires_chromadb()
