@@ -52,10 +52,11 @@ By default, the demo checks out a pinned Notary revision so benchmark behavior i
 `scripts/run_demo.sh` currently pins Notary to:
 
 ```text
-6a7b73f8d15bca1b23be67f63446ffaac3b032af
+f37b5053f5d501e39c32ead7fd4af0d070144253
 ```
 
-This pin is for the synthetic demo only. It keeps local and CI scoring deterministic, but it is not a compatibility promise for other Notary revisions.
+This pin includes the current Notary benchmark guardrails for confidence handling, duplicate permanent fact detection, malformed authority records, and snapshot-level result wording.
+It is for the synthetic demo only. It keeps local and CI scoring deterministic, but it is not a compatibility promise for other Notary revisions.
 
 To test the demo against a different Notary commit:
 
