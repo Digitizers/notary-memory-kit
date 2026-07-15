@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NOTARY_REPO="${NOTARY_REPO:-/tmp/notary-memory-kit-notary}"
-NOTARY_COMMIT="${NOTARY_COMMIT:-f37b5053f5d501e39c32ead7fd4af0d070144253}"
+NOTARY_COMMIT="${NOTARY_COMMIT:-3cc0a08f9799abfd41250a64eda263f6e2bf66cb}"
 
 cd "$ROOT"
 
