@@ -191,6 +191,20 @@ def audit_authority_surfaces(authorities: list[dict[str, Any]], facts: list[dict
     return issues
 
 
+def _coerce_confidence(value: Any) -> float | None:
+    """Coerce a confidence value the same way validate_facts accepts it.
+
+    The schema allows numeric strings; the audit must not silently skip
+    values the validator declared valid.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def audit_cross_agent_conflicts(authorities: list[dict[str, Any]], facts: list[dict[str, Any]]) -> list[str]:
     """Warnings for cross-agent conflicts and poisoning signals the
     evidence can prove.
@@ -217,13 +231,9 @@ def audit_cross_agent_conflicts(authorities: list[dict[str, Any]], facts: list[d
             continue
 
         authority = auth_map.get(agent_id)
-        ceiling = (authority or {}).get("max_confidence_claim")
-        confidence = fact.get("confidence")
-        if (
-            isinstance(ceiling, (int, float))
-            and isinstance(confidence, (int, float))
-            and confidence > ceiling
-        ):
+        ceiling = _coerce_confidence((authority or {}).get("max_confidence_claim"))
+        confidence = _coerce_confidence(fact.get("confidence"))
+        if ceiling is not None and confidence is not None and confidence > ceiling:
             issues.append(
                 f"[{fact_id}] agent '{agent_id}' confidence {confidence}"
                 f" above max_confidence_claim {ceiling} — confidence inflation"
@@ -248,10 +258,10 @@ def audit_cross_agent_conflicts(authorities: list[dict[str, Any]], facts: list[d
                 " without authority — unresolved cross-agent conflict"
             )
 
-        target_confidence = target.get("confidence")
+        target_confidence = _coerce_confidence(target.get("confidence"))
         if (
-            isinstance(confidence, (int, float))
-            and isinstance(target_confidence, (int, float))
+            confidence is not None
+            and target_confidence is not None
             and confidence < target_confidence
         ):
             issues.append(
