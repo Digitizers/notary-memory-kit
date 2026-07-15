@@ -191,6 +191,78 @@ def audit_authority_surfaces(authorities: list[dict[str, Any]], facts: list[dict
     return issues
 
 
+def audit_cross_agent_conflicts(authorities: list[dict[str, Any]], facts: list[dict[str, Any]]) -> list[str]:
+    """Warnings for cross-agent conflicts and poisoning signals the
+    evidence can prove.
+
+    - An overwrite whose in-set target was written by a DIFFERENT agent
+      is a cross-agent conflict; it is only clean when the overwriting
+      agent holds can_overwrite and the surface.
+    - A cross-agent overwrite that lowers the target's confidence is a
+      dilution signal even when authorized.
+    - A fact whose confidence exceeds its agent's max_confidence_claim
+      (when the authority declares one) is confidence inflation.
+
+    Warnings only, matching the authority audit: the kit prepares
+    evidence for review, it does not block ingestion.
+    """
+    issues: list[str] = []
+    auth_map = {authority.get("agent_id"): authority for authority in authorities}
+    facts_by_id = {fact.get("fact_id"): fact for fact in facts if fact.get("fact_id")}
+
+    for fact in facts:
+        fact_id = fact.get("fact_id", "<unknown>")
+        agent_id = fact.get("agent_id")
+        if not agent_id:
+            continue
+
+        authority = auth_map.get(agent_id)
+        ceiling = (authority or {}).get("max_confidence_claim")
+        confidence = fact.get("confidence")
+        if (
+            isinstance(ceiling, (int, float))
+            and isinstance(confidence, (int, float))
+            and confidence > ceiling
+        ):
+            issues.append(
+                f"[{fact_id}] agent '{agent_id}' confidence {confidence}"
+                f" above max_confidence_claim {ceiling} — confidence inflation"
+            )
+
+        target = facts_by_id.get(fact.get("overwrite_of"))
+        if not target or target is fact:
+            continue
+        target_agent = target.get("agent_id")
+        if not target_agent or target_agent == agent_id:
+            continue
+
+        authorized = bool(
+            authority
+            and authority.get("can_overwrite")
+            and fact.get("surface") in authority.get("allowed_surfaces", [])
+        )
+        if not authorized:
+            issues.append(
+                f"[{fact_id}] agent '{agent_id}' overwrites fact"
+                f" '{target.get('fact_id')}' by agent '{target_agent}'"
+                " without authority — unresolved cross-agent conflict"
+            )
+
+        target_confidence = target.get("confidence")
+        if (
+            isinstance(confidence, (int, float))
+            and isinstance(target_confidence, (int, float))
+            and confidence < target_confidence
+        ):
+            issues.append(
+                f"[{fact_id}] agent '{agent_id}' lowers confidence of fact"
+                f" '{target.get('fact_id')}' by agent '{target_agent}'"
+                f" ({target_confidence} -> {confidence}) — cross-agent confidence dilution"
+            )
+
+    return issues
+
+
 def load_store(target: Path) -> dict[str, Any]:
     if target.is_dir():
         path = default_store_path(target)
@@ -215,14 +287,18 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         "facts": facts,
         "authorities": authorities,
         "authority_audit": audit_authority_surfaces(authorities, facts),
+        "conflict_audit": audit_cross_agent_conflicts(authorities, facts),
     }
     store_path = Path(args.store) if args.store else default_store_path(root)
     store_path.parent.mkdir(parents=True, exist_ok=True)
     store_path.write_text(json.dumps(store, indent=2, ensure_ascii=False), encoding="utf-8")
     audit_count = len(store["authority_audit"])
+    conflict_count = len(store["conflict_audit"])
     print(f"Ingested {len(facts)} facts and {len(authorities)} authorities -> {store_path}")
     if audit_count:
         print(f"Authority audit warnings: {audit_count}")
+    if conflict_count:
+        print(f"Conflict audit warnings: {conflict_count}")
     return 0
 
 
@@ -260,6 +336,7 @@ def cmd_export(args: argparse.Namespace) -> int:
         "facts": store.get("facts", []),
         "authorities": store.get("authorities", []),
         "authority_audit": store.get("authority_audit", []),
+        "conflict_audit": store.get("conflict_audit", []),
     }
     output.write_text(json.dumps(export, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"Exported {len(export['facts'])} facts -> {output}")
