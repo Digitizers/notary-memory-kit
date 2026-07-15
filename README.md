@@ -18,6 +18,7 @@ It is not packaged, released, or supported as production infrastructure.
 - Reports authority-surface warnings for intentional policy violations.
 - Searches local synthetic facts with a simple keyword flow.
 - Exports Notary-compatible evidence JSON.
+- Converts a MemPalace store into Notary evidence (see [`docs/mempalace-adapter.md`](docs/mempalace-adapter.md)).
 - Runs a reproducible synthetic demo against a pinned Notary revision.
 
 ## What It Is Not

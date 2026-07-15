@@ -24,5 +24,8 @@ jobs:
       - name: Compile Python sources
         run: python3 -m compileall -q notary_memory_kit tests
 
+      - name: Run MemPalace adapter tests
+        run: python3 tests/test_mempalace_adapter.py
+
       - name: Run synthetic demo
         run: scripts/run_demo.sh

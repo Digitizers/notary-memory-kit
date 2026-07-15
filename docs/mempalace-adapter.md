@@ -1,0 +1,64 @@
+# MemPalace → Notary adapter
+
+`notary_memory_kit/mempalace_adapter.py` converts a
+[MemPalace](https://github.com/MemPalace/mempalace) store into the Notary
+snapshot format (`{"facts": [...], "authorities": [...]}`) so it can be scored
+with Notary's benchmark runner.
+
+## Usage
+
+```bash
+# Knowledge graph only (stdlib, no extra dependencies):
+python3 -m notary_memory_kit.mempalace_adapter \
+  --kg ~/.mempalace/knowledge_graph.sqlite3 \
+  --output out/mempalace-notary-evidence.json
+
+# Include palace drawers (requires MemPalace's chromadb backend):
+python3 -m notary_memory_kit.mempalace_adapter \
+  --kg ~/.mempalace/knowledge_graph.sqlite3 \
+  --palace ~/.mempalace/palace \
+  --output out/mempalace-notary-evidence.json
+
+# Score it:
+PYTHONPATH=/path/to/notary python3 -m benchmark.runner out/mempalace-notary-evidence.json
+```
+
+## Field mapping
+
+| Notary field | Knowledge-graph triple | Palace drawer |
+|---|---|---|
+| `fact_id` | `triples.id` | drawer id |
+| `content` | `"<subject name> <predicate> <object name>"` (names resolved via `entities`) | document text |
+| `agent_id` | `adapter_name` | `added_by` |
+| `session_id` | `source_file` → `source_drawer_id` → `source_closet` | `source_file` |
+| `timestamp` | `valid_from` → `extracted_at` | `authored_at` → `filed_at` |
+| `surface` | `predicate` | `"<wing>/<room>"` |
+| `lifecycle` | `"permanent"` (all triples are durable knowledge) | `"permanent"` |
+| `confidence` | `confidence` | `1.0` (drawers carry none) |
+| `overwrite_of` | reconstructed: prior triple with the same `(subject, predicate)` whose `valid_to` equals this triple's `valid_from` (MemPalace's `supersede()` boundary) | none (drawer overwrites are destructive) |
+
+## Honest-by-default governance mapping
+
+MemPalace has **no write-authority model, no session identity, and no
+explicit overwrite links**. The adapter maps only what actually exists:
+
+- `authorities` defaults to an **empty list**. Under Notary's default-deny
+  stability semantics the export scores accordingly — that reflects
+  MemPalace's real governance posture, not an adapter defect.
+- `--synthesize-authorities` emits one permissive `WriteAuthority` per
+  observed agent, each marked `"synthetic": true`. Use it to separate
+  format-compatibility questions from governance questions; it proves
+  nothing about real write control.
+- Missing provenance (e.g. a triple with no `source_file`) stays empty and
+  fails governance, as it should.
+
+## Limitations
+
+- Drawer export requires the `chromadb` package (MemPalace's own storage
+  backend). The kit does not add this dependency; without it the adapter
+  works on the knowledge graph alone.
+- Drawer-level overwrites in MemPalace are destructive (purge/upsert by
+  deterministic id), so no `overwrite_of` lineage exists for drawers.
+- The schema of record is MemPalace's live `knowledge_graph._init_db` DDL;
+  `docs/schema.sql` in the MemPalace repository is stale (it omits the
+  provenance columns).
