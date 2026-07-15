@@ -166,6 +166,17 @@ def validate_authorities(authorities: list[dict[str, Any]], facts: list[dict[str
         if not isinstance(authority.get("can_overwrite"), bool):
             issues.append(f"[authority:{agent_id}] can_overwrite must be boolean")
 
+        ceiling = authority.get("max_confidence_claim")
+        if ceiling is not None:
+            # A malformed ceiling must fail validation, not silently mean
+            # "no ceiling" — that would suppress the audit's
+            # confidence-inflation warnings for every fact by this agent.
+            ceiling_value = _coerce_confidence(ceiling)
+            if ceiling_value is None:
+                issues.append(f"[authority:{agent_id}] invalid max_confidence_claim {ceiling!r}")
+            elif not (0 <= ceiling_value <= 1):
+                issues.append(f"[authority:{agent_id}] max_confidence_claim out of range: {ceiling}")
+
     known_agents = {authority.get("agent_id") for authority in authorities}
     for fact in facts:
         agent_id = fact.get("agent_id")

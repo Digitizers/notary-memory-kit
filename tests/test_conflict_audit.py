@@ -7,7 +7,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from notary_memory_kit.cli import audit_cross_agent_conflicts, validate_facts  # noqa: E402
+from notary_memory_kit.cli import (  # noqa: E402
+    audit_cross_agent_conflicts,
+    validate_authorities,
+    validate_facts,
+)
 
 
 def fact(**overrides):
@@ -114,6 +118,26 @@ def test_cross_agent_takeover_of_disallowed_surface_is_flagged() -> None:
     print("PASS: displaced-surface authority required")
 
 
+def test_malformed_confidence_ceiling_fails_validation() -> None:
+    # A malformed ceiling must not silently mean "no ceiling" — that would
+    # suppress every inflation warning for the agent.
+    base = {"agent_id": "agent-x", "allowed_surfaces": ["s"], "can_overwrite": False}
+
+    issues = validate_authorities([{**base, "max_confidence_claim": "0,9"}], [])
+    assert any("invalid max_confidence_claim" in issue for issue in issues), issues
+
+    issues = validate_authorities([{**base, "max_confidence_claim": True}], [])
+    assert any("invalid max_confidence_claim" in issue for issue in issues), issues
+
+    issues = validate_authorities([{**base, "max_confidence_claim": 1.5}], [])
+    assert any("out of range" in issue for issue in issues), issues
+
+    issues = validate_authorities([{**base, "max_confidence_claim": 0.9}], [])
+    assert issues == [], issues
+
+    print("PASS: malformed confidence ceiling fails validation")
+
+
 def test_same_agent_overwrite_and_missing_ceiling_are_clean() -> None:
     warnings = audit_cross_agent_conflicts(AUTHORITIES, [
         fact(fact_id="f001", agent_id="agent-a", confidence=1.0),
@@ -132,6 +156,7 @@ def run_all() -> None:
     test_numeric_string_confidence_is_audited_like_the_validator_accepts_it()
     test_boolean_confidence_is_rejected_by_validation()
     test_cross_agent_takeover_of_disallowed_surface_is_flagged()
+    test_malformed_confidence_ceiling_fails_validation()
     test_same_agent_overwrite_and_missing_ceiling_are_clean()
     print("PASS: conflict audit tests")
 
