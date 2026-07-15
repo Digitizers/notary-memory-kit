@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from notary_memory_kit.mempalace_adapter import (  # noqa: E402
+    _normalize_timestamp,
     build_snapshot,
     export_knowledge_graph,
     export_palace_drawers,
@@ -80,12 +81,13 @@ def build_fixture_kg(db_path: Path) -> None:
                 0.8, None, "convos/session-b.jsonl", None,
                 "claude_code", "2026-06-01T00:05:00Z",
             ),
-            # Unrelated triple with no provenance at all.
+            # Unrelated triple with no provenance; extracted_at in
+            # SQLite CURRENT_TIMESTAMP form (space-separated, naive).
             (
                 "t3", "ent-user", "prefers", "ent-docs-v2",
                 None, None,
                 1.0, None, None, None,
-                None, "2026-06-02T10:00:00Z",
+                None, "2026-06-02 10:00:00",
             ),
         ],
     )
@@ -126,9 +128,27 @@ def test_knowledge_graph_export() -> None:
     assert t2["confidence"] == 0.8
     assert t3["agent_id"] == ""
     assert t3["session_id"] == ""
-    assert t3["timestamp"] == "2026-06-02T10:00:00Z"  # extracted_at fallback
+    # extracted_at fallback, normalized from "2026-06-02 10:00:00".
+    assert t3["timestamp"] == "2026-06-02T10:00:00Z", t3["timestamp"]
 
     print("PASS: knowledge graph export")
+
+
+def test_timestamp_normalization() -> None:
+    # Date-only valid_from (supported by MemPalace's KG).
+    assert _normalize_timestamp("2026-05-01") == "2026-05-01T00:00:00Z"
+    # SQLite CURRENT_TIMESTAMP form: space separator, naive UTC.
+    assert _normalize_timestamp("2026-06-02 10:00:00") == "2026-06-02T10:00:00Z"
+    # Already-normalized values are preserved.
+    assert _normalize_timestamp("2026-05-01T09:00:00Z") == "2026-05-01T09:00:00Z"
+    # Offset forms stay aware (only +00:00 is folded to Z).
+    assert _normalize_timestamp("2026-05-01T09:00:00+02:00") == "2026-05-01T09:00:00+02:00"
+    # Empty/missing and unparseable values pass through for validation.
+    assert _normalize_timestamp(None) == ""
+    assert _normalize_timestamp("") == ""
+    assert _normalize_timestamp("not-a-date") == "not-a-date"
+
+    print("PASS: timestamp normalization")
 
 
 def test_synthetic_authorities_are_opt_in_and_marked() -> None:
@@ -222,6 +242,7 @@ def test_export_scores_under_notary_when_available() -> None:
 
 
 def run_all() -> None:
+    test_timestamp_normalization()
     test_knowledge_graph_export()
     test_synthetic_authorities_are_opt_in_and_marked()
     test_drawer_export_requires_chromadb()

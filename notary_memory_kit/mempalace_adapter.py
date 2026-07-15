@@ -40,8 +40,30 @@ import argparse
 import json
 import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
+def _normalize_timestamp(value: Any) -> str:
+    """Normalize MemPalace time values to ISO-8601 with T and Z.
+
+    MemPalace stores date-only valid_from values ("2026-05-01") and
+    SQLite CURRENT_TIMESTAMP extracted_at values ("YYYY-MM-DD HH:MM:SS",
+    both UTC and timezone-naive). Emitting them verbatim produces
+    snapshots whose timestamps mix naive and aware forms, which the
+    schema does not document and chronological ordering cannot compare.
+    Unparseable values pass through so validation can flag them.
+    """
+    if not isinstance(value, str) or not value:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    if parsed.tzinfo is None:
+        return parsed.isoformat() + "Z"
+    return parsed.isoformat().replace("+00:00", "Z")
 
 
 def _row_value(row: sqlite3.Row, key: str) -> Any:
@@ -108,7 +130,9 @@ def export_knowledge_graph(db_path: Path) -> List[Dict[str, Any]]:
                 or _row_value(row, "source_drawer_id")
                 or row["source_closet"]
                 or "",
-            "timestamp": row["valid_from"] or _row_value(row, "extracted_at") or "",
+            "timestamp": _normalize_timestamp(
+                row["valid_from"] or _row_value(row, "extracted_at")
+            ),
             "surface": row["predicate"],
             "lifecycle": "permanent",
             "confidence": confidence if confidence is not None else 1.0,
@@ -161,7 +185,9 @@ def export_palace_drawers(
                 "content": document or "",
                 "agent_id": meta.get("added_by", ""),
                 "session_id": meta.get("source_file", ""),
-                "timestamp": meta.get("authored_at") or meta.get("filed_at") or "",
+                "timestamp": _normalize_timestamp(
+                    meta.get("authored_at") or meta.get("filed_at")
+                ),
                 "surface": surface,
                 "lifecycle": "permanent",
                 "confidence": 1.0,
